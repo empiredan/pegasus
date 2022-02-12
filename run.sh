@@ -178,6 +178,7 @@ function run_build()
                 ;;
             --use_jemalloc)
                 USE_JEMALLOC=YES
+                DISABLE_GPERF=YES
                 ;;
             *)
                 echo "ERROR: unknown option \"$key\""
