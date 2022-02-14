@@ -115,7 +115,7 @@ cp -v -r ./DSN_ROOT/bin/pegasus_pressureclient ${pack}/DSN_ROOT/bin/
 
 mkdir -p ${pack}/DSN_ROOT/lib
 copy_file ./DSN_ROOT/lib/*.so* ${pack}/DSN_ROOT/lib/
-copy_file ./rdsn/thirdparty/output/lib/libPoco*.so.48 ${pack}/DSN_ROOT/lib/
+copy_file ./rdsn/thirdparty/output/lib/libPoco*.so.* ${pack}/DSN_ROOT/lib/
 
 if [ "$use_jemalloc" == "yes" ]; then
     copy_file ./rdsn/thirdparty/output/lib/libjemalloc.so.2 ${pack}/DSN_ROOT/lib/
