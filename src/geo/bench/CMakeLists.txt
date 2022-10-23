@@ -33,7 +33,6 @@ set(MY_PROJ_LIBS
         s2
         pegasus_client_static
         RocksDB::rocksdb
-        dsn_runtime
         dsn_utils
         )
 
