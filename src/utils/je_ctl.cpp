@@ -17,7 +17,7 @@
 
 #ifdef DSN_USE_JEMALLOC
 
-#include "je_ctl.h"
+#include "utils/je_ctl.h"
 
 #include <cstring>
 #include <utility>
@@ -64,7 +64,7 @@ void je_dump_malloc_stats(const char *opts, size_t buf_sz, std::string &stats)
     // Avoid malloc in callback.
     stats.reserve(buf_sz);
 
-    malloc_stats_print(je_stats_cb, &stats, opts);
+    ::malloc_stats_print(je_stats_cb, &stats, opts);
 }
 
 const char *je_stats_type_to_opts(je_stats_type type)
@@ -95,7 +95,7 @@ bool je_check_err(const char *action, const int err, std::string *msg = nullptr)
             "failed to {}: errno={}, message={}", action, err, dsn::utils::safe_strerror(err));
     }
 
-    ddebug_f("<jemalloc> {}", my_msg);
+    LOG_INFO_F("<jemalloc> {}", my_msg);
 
     if (msg != nullptr) {
         *msg = std::move(my_msg);
@@ -114,13 +114,56 @@ template <typename T>
 inline bool je_get_val(const char *name, T &val, std::string *msg = nullptr)
 {
     size_t sz = sizeof(val);
-    int je_ret = mallctl(name, &val, &sz, nullptr, 0);
+    int je_ret = ::mallctl(name, &val, &sz, nullptr, 0);
     return je_check_get_err(name, je_ret, msg);
 }
 
-inline bool je_get_opt_prof(bool &prof, std::string *err_msg = nullptr)
+template <typename T>
+inline bool
+je_check_set_err(const char *name, const T &val, int err, std::string *err_msg = nullptr)
 {
-    return je_get_val("opt.prof", prof, err_msg);
+    std::string action(fmt::format("set {} to {}", name, val));
+    return je_check_err(action.c_str(), err, err_msg);
+}
+
+template <typename T>
+inline bool je_set_val(const char *name, const T &val, std::string *err_msg = nullptr)
+{
+    auto new_val = reinterpret_cast<void *>(const_cast<T *>(&val));
+    int je_ret = ::mallctl(name, nullptr, nullptr, new_val, sizeof(val));
+    return je_check_set_err(name, val, je_ret, err_msg);
+}
+
+inline bool je_set_str(const char *name, const char *val, std::string *err_msg = nullptr)
+{
+    void *p = nullptr;
+    size_t sz = 0;
+    if (val != nullptr) {
+        p = reinterpret_cast<void *>(&val);
+        sz = sizeof(val);
+    }
+
+    int je_ret = ::mallctl(name, nullptr, nullptr, p, sz);
+    return je_check_set_err(name, val == nullptr ? "nullptr" : val, je_ret, err_msg);
+}
+
+#define CHECK_IF_PROF_ENABLED(err_msg)                                                             \
+    do {                                                                                           \
+        bool enabled = false;                                                                      \
+        if (!je_is_prof_enabled(enabled, err_msg)) {                                               \
+            return false;                                                                          \
+        }                                                                                          \
+        if (!enabled) {                                                                            \
+            *err_msg = "<jemalloc> prof is disabled now, enable it by "                            \
+                       "`export MALLOC_CONF=\"prof:true,prof_prefix:...\"`";                       \
+            return false;                                                                          \
+        }                                                                                          \
+    } while (0)
+
+inline bool je_set_prof_active(bool active, std::string *err_msg)
+{
+    CHECK_IF_PROF_ENABLED(err_msg);
+    return je_set_val("prof.active", active, err_msg);
 }
 
 } // anonymous namespace
@@ -142,6 +185,39 @@ void je_dump_stats(je_stats_type type, size_t buf_sz, std::string &stats)
 void je_dump_stats(je_stats_type type, std::string &stats)
 {
     je_dump_stats(type, je_stats_type_to_default_buf_sz(type), stats);
+}
+
+bool je_is_prof_enabled(bool &enabled, std::string *err_msg)
+{
+    return je_get_val("opt.prof", enabled, err_msg);
+}
+
+bool je_is_prof_active(bool &active, std::string *err_msg)
+{
+    return je_get_val("opt.prof_active", active, err_msg);
+}
+
+#define CHECK_IF_PROF_ACTIVE(err_msg)                                                              \
+    do {                                                                                           \
+        bool active = false;                                                                       \
+        if (!je_is_prof_active(active, err_msg)) {                                                 \
+            return false;                                                                          \
+        }                                                                                          \
+        if (!active) {                                                                             \
+            *err_msg = "<jemalloc> prof is not active now, activate it first";                     \
+            return false;                                                                          \
+        }                                                                                          \
+    } while (0)
+
+bool je_activate_prof(std::string *err_msg) { return je_set_prof_active(true, err_msg); }
+
+bool je_deactivate_prof(std::string *err_msg) { return je_set_prof_active(false, err_msg); }
+
+bool je_dump_prof(const char *path, std::string *err_msg)
+{
+    CHECK_IF_PROF_ENABLED(err_msg);
+    CHECK_IF_PROF_ACTIVE(err_msg);
+    return je_set_str("prof.dump", path, err_msg);
 }
 
 } // namespace dsn
