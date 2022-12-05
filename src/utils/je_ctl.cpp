@@ -20,13 +20,17 @@
 #include "je_ctl.h"
 
 #include <cstring>
+#include <utility>
 #include <vector>
 
 #include <boost/algorithm/string/join.hpp>
+#include <fmt/format.h>
 #include <jemalloc/jemalloc.h>
 
 #include "utils/api_utilities.h"
 #include "utils/fmt_logging.h"
+#include "utils/ports.h"
+#include "utils/safe_strerror_posix.h"
 
 #define RETURN_ARRAY_ELEM_BY_ENUM_TYPE(type, array)                                                \
     do {                                                                                           \
@@ -79,6 +83,44 @@ size_t je_stats_type_to_default_buf_sz(je_stats_type type)
     };
 
     RETURN_ARRAY_ELEM_BY_ENUM_TYPE(type, buf_sz_map);
+}
+
+bool je_check_err(const char *action, const int err, std::string *msg = nullptr)
+{
+    std::string my_msg;
+    if (dsn_likely(err == 0)) {
+        my_msg = fmt::format("{} successfully", action);
+    } else {
+        my_msg = fmt::format(
+            "failed to {}: errno={}, message={}", action, err, dsn::utils::safe_strerror(err));
+    }
+
+    ddebug_f("<jemalloc> {}", my_msg);
+
+    if (msg != nullptr) {
+        *msg = std::move(my_msg);
+    }
+
+    return err == 0;
+}
+
+inline bool je_check_get_err(const char *name, int err, std::string *msg = nullptr)
+{
+    std::string action(fmt::format("get {}", name));
+    return je_check_err(action.c_str(), err, msg);
+}
+
+template <typename T>
+inline bool je_get_val(const char *name, T &val, std::string *msg = nullptr)
+{
+    size_t sz = sizeof(val);
+    int je_ret = mallctl(name, &val, &sz, nullptr, 0);
+    return je_check_get_err(name, je_ret, msg);
+}
+
+inline bool je_get_opt_prof(bool &prof, std::string *err_msg = nullptr)
+{
+    return je_get_val("opt.prof", prof, err_msg);
 }
 
 } // anonymous namespace
