@@ -62,9 +62,7 @@ void je_dump_stats(je_stats_type type, size_t buf_sz, std::string &stats);
 // Dump the stats of specified type to a string, with default buffer size.
 void je_dump_stats(je_stats_type type, std::string &stats);
 
-bool je_is_prof_enabled(bool &enabled, std::string *err_msg = nullptr);
-
-bool je_is_prof_active(bool &active, std::string *err_msg = nullptr);
+bool je_get_prof_status(std::string &info);
 
 bool je_activate_prof(std::string *err_msg = nullptr);
 

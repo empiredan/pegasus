@@ -134,6 +134,19 @@ inline bool je_set_val(const char *name, const T &val, std::string *err_msg = nu
     return je_check_set_err(name, val, je_ret, err_msg);
 }
 
+inline bool je_get_str(const char *name, std::string &val, std::string *msg = nullptr)
+{
+    const char *p = nullptr;
+    size_t sz = sizeof(p);
+    int je_ret = ::mallctl(name, reinterpret_cast<void *>(&p), &sz, nullptr, 0);
+    if (!je_check_get_err(name, je_ret, msg)) {
+        return false;
+    }
+
+    val = p;
+    return true;
+}
+
 inline bool je_set_str(const char *name, const char *val, std::string *err_msg = nullptr)
 {
     void *p = nullptr;
@@ -145,6 +158,21 @@ inline bool je_set_str(const char *name, const char *val, std::string *err_msg =
 
     int je_ret = ::mallctl(name, nullptr, nullptr, p, sz);
     return je_check_set_err(name, val == nullptr ? "nullptr" : val, je_ret, err_msg);
+}
+
+inline bool je_is_prof_enabled(bool &enabled, std::string *err_msg)
+{
+    return je_get_val("opt.prof", enabled, err_msg);
+}
+
+inline bool je_is_prof_active(bool &active, std::string *err_msg)
+{
+    return je_get_val("opt.prof_active", active, err_msg);
+}
+
+inline bool je_is_writable_prof_active(bool &active, std::string *err_msg)
+{
+    return je_get_val("prof.active", active, err_msg);
 }
 
 #define CHECK_IF_PROF_ENABLED(err_msg)                                                             \
@@ -160,10 +188,27 @@ inline bool je_set_str(const char *name, const char *val, std::string *err_msg =
         }                                                                                          \
     } while (0)
 
+#define CHECK_IF_PROF_ACTIVE(err_msg)                                                              \
+    do {                                                                                           \
+        bool active = false;                                                                       \
+        if (!je_is_prof_active(active, err_msg)) {                                                 \
+            return false;                                                                          \
+        }                                                                                          \
+        if (!active) {                                                                             \
+            *err_msg = "<jemalloc> prof is not active now, activate it first";                     \
+            return false;                                                                          \
+        }                                                                                          \
+    } while (0)
+
 inline bool je_set_prof_active(bool active, std::string *err_msg)
 {
     CHECK_IF_PROF_ENABLED(err_msg);
     return je_set_val("prof.active", active, err_msg);
+}
+
+inline bool je_get_prof_prefix(std::string &prefix, std::string *err_msg)
+{
+    return je_get_str("opt.prof_prefix", prefix, err_msg);
 }
 
 } // anonymous namespace
@@ -187,27 +232,39 @@ void je_dump_stats(je_stats_type type, std::string &stats)
     je_dump_stats(type, je_stats_type_to_default_buf_sz(type), stats);
 }
 
-bool je_is_prof_enabled(bool &enabled, std::string *err_msg)
+bool je_get_prof_status(std::string &info)
 {
-    return je_get_val("opt.prof", enabled, err_msg);
-}
+    std::string err_msg;
 
-bool je_is_prof_active(bool &active, std::string *err_msg)
-{
-    return je_get_val("opt.prof_active", active, err_msg);
-}
+    bool enabled;
+    if (!je_is_prof_enabled(enabled, &err_msg)) {
+        info = err_msg;
+        return false;
+    }
+    info += "current status of jemalloc profile:";
+    info += fmt::format("\nopt.prof: {}", enabled);
 
-#define CHECK_IF_PROF_ACTIVE(err_msg)                                                              \
-    do {                                                                                           \
-        bool active = false;                                                                       \
-        if (!je_is_prof_active(active, err_msg)) {                                                 \
-            return false;                                                                          \
-        }                                                                                          \
-        if (!active) {                                                                             \
-            *err_msg = "<jemalloc> prof is not active now, activate it first";                     \
-            return false;                                                                          \
-        }                                                                                          \
-    } while (0)
+    if (!je_is_prof_active(enabled, &err_msg)) {
+        info = err_msg;
+        return false;
+    }
+    info += fmt::format("\nopt.prof_active: {}", enabled);
+
+    if (!je_is_writable_prof_active(enabled, &err_msg)) {
+        info = err_msg;
+        return false;
+    }
+    info += fmt::format("\nprof.active: {}", enabled);
+
+    std::string prefix;
+    if (!je_get_prof_prefix(prefix, &err_msg)) {
+        info = err_msg;
+        return false;
+    }
+    info += fmt::format("\nopt.prof_prefix: {}", prefix);
+
+    return true;
+}
 
 bool je_activate_prof(std::string *err_msg) { return je_set_prof_active(true, err_msg); }
 

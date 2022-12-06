@@ -2298,6 +2298,51 @@ void replica_stub::register_jemalloc_ctrl_command()
             dsn::je_dump_stats(type, static_cast<size_t>(buf_sz), stats);
             return stats;
         }));
+
+    _cmds.emplace_back(::dsn::command_manager::instance().register_command(
+        {"replica.get-jemalloc-prof-status"},
+        "replica.get-jemalloc-prof-status - get current status of jemalloc profile",
+        "get current status of jemalloc profile",
+        [](const std::vector<std::string> &args) {
+            std::string msg;
+            dsn::je_get_prof_status(msg);
+            return msg;
+        }));
+
+    _cmds.emplace_back(::dsn::command_manager::instance().register_command(
+        {"replica.activate-jemalloc-prof"},
+        "replica.activate-jemalloc-prof - activate jemalloc profile",
+        "activate jemalloc profile",
+        [](const std::vector<std::string> &args) {
+            std::string msg;
+            dsn::je_activate_prof(&msg);
+            return msg;
+        }));
+
+    _cmds.emplace_back(::dsn::command_manager::instance().register_command(
+        {"replica.deactivate-jemalloc-prof"},
+        "replica.deactivate-jemalloc-prof - deactivate jemalloc profile",
+        "deactivate jemalloc profile",
+        [](const std::vector<std::string> &args) {
+            std::string msg;
+            dsn::je_deactivate_prof(&msg);
+            return msg;
+        }));
+
+    _cmds.emplace_back(::dsn::command_manager::instance().register_command(
+        {"replica.dump-jemalloc-prof"},
+        "replica.dump-jemalloc-prof [path]",
+        "dump jemalloc profile",
+        [](const std::vector<std::string> &args) {
+            const char *path = nullptr;
+            if (!args.empty()) {
+                path = args[0].c_str();
+            }
+
+            std::string msg;
+            dsn::je_dump_prof(path, &msg);
+            return msg;
+        }));
 }
 #endif
 
