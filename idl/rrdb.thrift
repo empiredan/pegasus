@@ -68,11 +68,20 @@ enum mutate_operation
     MO_DELETE
 }
 
+enum update_type
+{
+    UT_PUT,
+    UT_INCR
+}
+
 struct update_request
 {
     1:dsn.blob      key;
     2:dsn.blob      value;
     3:i32           expire_ts_seconds;
+
+    // Since v2.6.0.
+    4:optional update_type type;
 }
 
 struct update_response

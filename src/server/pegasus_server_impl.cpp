@@ -63,6 +63,7 @@
 #include "rrdb/rrdb.code.definition.h"
 #include "rrdb/rrdb_types.h"
 #include "runtime/api_layer1.h"
+#include "runtime/message_utils.h"
 #include "runtime/rpc/rpc_message.h"
 #include "runtime/task/async_calls.h"
 #include "runtime/task/task_code.h"
@@ -349,6 +350,29 @@ void pegasus_server_impl::gc_checkpoints(bool force_reserve_one)
                     checkpoints_count,
                     min_d,
                     max_d);
+}
+
+error_code pegasus_server_impl::make_incr_idempotent(const dsn::apps::incr_request &incr, dsn::message_ex **new_req)
+{
+    absl::string_view raw_key = incr.key.to_string_view();
+    std::string value;
+    rocksdb::Status status = _db->Get(_data_cf_rd_opts, _data_cf, utils::to_rocksdb_slice(raw_key), &value);
+
+    dsn::apps::update_request update_req;
+    dsn::message_ex *update_msg = dsn::from_thrift_request_to_received_message(update_req, dsn::apps::RPC_RRDB_RRDB_PUT);
+    update_msg->add_ref();
+    *msg = update_msg;
+}
+
+error_code pegasus_server_impl::make_idempotent(dsn::message_ex *req, dsn::message_ex **new_req)
+{
+    dsn::task_code rpc_code(req->rpc_code());
+    if (rpc_code == dsn::apps::RPC_RRDB_RRDB_INCR) {
+        dsn::apps::incr_request incr;
+        dsn::unmarshall(req, incr);
+        make_incr_idempotent(incr, new_req);
+    }
+    return dsn::ERR_OK;
 }
 
 int pegasus_server_impl::on_batched_write_requests(int64_t decree,

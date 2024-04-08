@@ -156,6 +156,12 @@ void replica::on_client_write(dsn::message_ex *request, bool ignore_throttling)
         return;
     }
 
+    // TODO(wangdan): add an option to control if non-idempotent requests should be rejected
+    // for duplications.
+    //
+    // Initially, non-idempotent requests should be rejected. After all non-idempotent
+    // mutations in plog are converted to idempotent, non-idempotent requests could be allowed
+    // for duplications.
     if (is_duplication_master() && !spec->rpc_request_is_write_idempotent) {
         // Ignore non-idempotent write, because duplication provides no guarantee of atomicity to
         // make this write produce the same result on multiple clusters.
@@ -219,6 +225,8 @@ void replica::on_client_write(dsn::message_ex *request, bool ignore_throttling)
         return;
     }
 
+    _app->make_idempotent(&request);
+    
     LOG_DEBUG_PREFIX("got write request from {}", request->header->from_address);
     auto mu = _primary_states.write_queue.add_work(request->rpc_code(), request, this);
     if (mu) {
