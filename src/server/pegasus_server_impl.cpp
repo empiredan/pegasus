@@ -352,23 +352,11 @@ void pegasus_server_impl::gc_checkpoints(bool force_reserve_one)
                     max_d);
 }
 
-error_code pegasus_server_impl::make_incr_idempotent(const dsn::apps::incr_request &incr, dsn::message_ex **new_req)
-{
-    absl::string_view raw_key = incr.key.to_string_view();
-    std::string value;
-    rocksdb::Status status = _db->Get(_data_cf_rd_opts, _data_cf, utils::to_rocksdb_slice(raw_key), &value);
-
-    dsn::apps::update_request update_req;
-    dsn::message_ex *update_msg = dsn::from_thrift_request_to_received_message(update_req, dsn::apps::RPC_RRDB_RRDB_PUT);
-    update_msg->add_ref();
-    *msg = update_msg;
-}
-
-error_code pegasus_server_impl::make_idempotent(dsn::message_ex *input_req, dsn::message_ex **output_req)
+int pegasus_server_impl::make_idempotent(dsn::message_ex *req, dsn::message_ex **new_req)
 {
     CHECK_TRUE(_is_open);
 
-    return _server_write->make_idempotent(input_req, output_req);
+    return _server_write->make_idempotent(req, new_req);
 }
 
 int pegasus_server_impl::on_batched_write_requests(int64_t decree,

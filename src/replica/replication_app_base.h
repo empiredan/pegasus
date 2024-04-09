@@ -243,7 +243,7 @@ public:
     virtual int on_request(message_ex *request) WARN_UNUSED_RESULT = 0;
 
     //
-    virtual error_code make_idempotent(dsn::message_ex **request) = 0;   
+    virtual int make_idempotent(dsn::message_ex *req, dsn::message_ex **new_req) = 0;
 
     //
     // Parameters:

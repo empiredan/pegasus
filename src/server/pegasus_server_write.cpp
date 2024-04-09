@@ -33,6 +33,7 @@
 #include "pegasus_server_write.h"
 #include "pegasus_utils.h"
 #include "rrdb/rrdb.code.definition.h"
+#include "runtime/message_utils.h"
 #include "runtime/rpc/rpc_holder.h"
 #include "runtime/rpc/rpc_message.h"
 #include "server/pegasus_write_service.h"
@@ -57,20 +58,19 @@ pegasus_server_write::pegasus_server_write(pegasus_server_impl *server)
       _write_svc(new pegasus_write_service(server)),
       METRIC_VAR_INIT_replica(corrupt_writes)
 {
+    init_non_idempotent_write_handlers();
     init_non_batch_write_handlers();
 }
 
-int pegasus_server_write::make_idempotent(dsn::message_ex *input_req, dsn::apps::update_request &_req)
+int pegasus_server_write::make_idempotent(dsn::message_ex *req, dsn::message_ex **new_req)
 {
-    dsn::task_code rpc_code(req->rpc_code());
-    if (rpc_code == dsn::apps::RPC_RRDB_RRDB_INCR) {
-        dsn::apps::incr_request incr;
-        dsn::unmarshall(req, incr);
-        return _impl->make_incr_idempotent(incr, new_req);
-            ::dsn::marshall(_response, resp);
-            dsn_rpc_reply(_response);
+    non_idempotent_write_map::const_iterator iter = _non_batch_write_handlers.find(req->rpc_code());
+    if (iter != _non_idempotent_write_handlers.end()) {
+        return iter->second(req, new_req);
     }
-    return dsn::ERR_OK;
+
+    // Always successful for idempotent requests.
+    return rocksdb::Status::kOk;
 }
 
 int pegasus_server_write::on_batched_write_requests(dsn::message_ex **requests,
@@ -89,7 +89,7 @@ int pegasus_server_write::on_batched_write_requests(dsn::message_ex **requests,
     }
 
     try {
-        auto iter = _non_batch_write_handlers.find(requests[0]->rpc_code());
+        non_batch_write_map::const_iterator iter = _non_batch_write_handlers.find(requests[0]->rpc_code());
         if (iter != _non_batch_write_handlers.end()) {
             CHECK_EQ(count, 1);
             return iter->second(requests[0]);
@@ -190,6 +190,26 @@ void pegasus_server_write::request_key_check(int64_t decree,
     }
 }
 
+void pegasus_server_write::init_non_idempotent_write_handlers()
+{
+    _non_idempotent_write_handlers = {
+        {dsn::apps::RPC_RRDB_RRDB_INCR,
+         [this](dsn::message_ex *req, dsn::message_ex **new_req) -> int {
+             auto rpc = incr_rpc(req);
+             dsn::apps::update_request update;
+
+             const auto err = _write_svc->make_idempotent(rpc.request(), rpc.response(), update);
+             if (dsn_likely(err == rocksdb::Status::kOk)) {
+                 *new_req = dsn::from_thrift_request_to_received_message(update, dsn::apps::RPC_RRDB_RRDB_PUT);
+             } else {
+                 rpc.enable_auto_reply();                                                                  
+             }
+
+             return err;
+         }},
+    };
+}
+
 void pegasus_server_write::init_non_batch_write_handlers()
 {
     _non_batch_write_handlers = {
@@ -230,5 +250,6 @@ void pegasus_server_write::init_non_batch_write_handlers()
          }},
     };
 }
+
 } // namespace server
 } // namespace pegasus

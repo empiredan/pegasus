@@ -47,6 +47,8 @@ class pegasus_server_write : public dsn::replication::replica_base
 public:
     pegasus_server_write(pegasus_server_impl *server);
 
+    int make_idempotent(dsn::message_ex *req, dsn::message_ex **new_req);
+
     /// \return error code returned by rocksdb, i.e rocksdb::Status::code.
     /// **NOTE**
     /// Error returned is regarded as the failure of replica, thus will trigger
@@ -85,6 +87,7 @@ private:
     void request_key_check(int64_t decree, dsn::message_ex *m, const dsn::blob &key);
 
 private:
+    void init_non_idempotent_write_handlers();
     void init_non_batch_write_handlers();
 
     friend class pegasus_server_write_test;
@@ -99,8 +102,11 @@ private:
     db_write_context _write_ctx;
     int64_t _decree;
 
-    typedef std::map<dsn::task_code, std::function<int(dsn::message_ex *)>> non_batch_writes_map;
-    non_batch_writes_map _non_batch_write_handlers;
+    using non_idempotent_write_map = std::map<dsn::task_code, std::function<int(dsn::message_ex *, dsn::message_ex **)>>;
+    non_idempotent_write_map _non_idempotent_write_handlers;
+
+    using non_batch_write_map = std::map<dsn::task_code, std::function<int(dsn::message_ex *)>>;
+    non_batch_write_map _non_batch_write_handlers;
 
     METRIC_VAR_DECLARE_counter(corrupt_writes);
 };

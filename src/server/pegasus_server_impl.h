@@ -148,7 +148,7 @@ public:
     ::dsn::error_code stop(bool clear_state) override;
 
     // 
-    error_code make_idempotent(dsn::message_ex **request) override;   
+    int make_idempotent(dsn::message_ex *req, dsn::message_ex **new_req) override;
 
     /// Each of the write request (specifically, the rpc that's configured as write, see
     /// option `rpc_request_is_write_operation` in rDSN `task_spec`) will first be

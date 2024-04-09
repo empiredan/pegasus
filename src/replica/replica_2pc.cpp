@@ -225,7 +225,16 @@ void replica::on_client_write(dsn::message_ex *request, bool ignore_throttling)
         return;
     }
 
-    _app->make_idempotent(&request);
+    dsn::message_ex *new_request;
+    if (!spec->rpc_request_is_write_idempotent) {
+        const int err = _app->make_idempotent(request, &new_request);
+        if (dsn_unlikely(err != rocksdb::Status::kOk)) {
+            return;
+        }
+
+        CHECK_NOTNULL(new_request, "");
+        request = new_request;
+    }
     
     LOG_DEBUG_PREFIX("got write request from {}", request->header->from_address);
     auto mu = _primary_states.write_queue.add_work(request->rpc_code(), request, this);
