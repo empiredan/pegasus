@@ -364,15 +364,11 @@ error_code pegasus_server_impl::make_incr_idempotent(const dsn::apps::incr_reque
     *msg = update_msg;
 }
 
-error_code pegasus_server_impl::make_idempotent(dsn::message_ex *req, dsn::message_ex **new_req)
+error_code pegasus_server_impl::make_idempotent(dsn::message_ex *input_req, dsn::message_ex **output_req)
 {
-    dsn::task_code rpc_code(req->rpc_code());
-    if (rpc_code == dsn::apps::RPC_RRDB_RRDB_INCR) {
-        dsn::apps::incr_request incr;
-        dsn::unmarshall(req, incr);
-        make_incr_idempotent(incr, new_req);
-    }
-    return dsn::ERR_OK;
+    CHECK_TRUE(_is_open);
+
+    return _server_write->make_idempotent(input_req, output_req);
 }
 
 int pegasus_server_impl::on_batched_write_requests(int64_t decree,

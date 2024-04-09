@@ -28,6 +28,7 @@
 
 #include <memory>
 #include <cstring>
+#include <type_traits>
 
 #include "absl/strings/string_view.h"
 #include <thrift/protocol/TBinaryProtocol.h>
@@ -82,6 +83,13 @@ public:
         auto s = new std::string(std::move(bytes));
         std::shared_ptr<char> buf(const_cast<char *>(s->data()), [s](char *) { delete s; });
         return blob(std::move(buf), 0, static_cast<unsigned int>(s->length()));
+    }
+
+    template <typename TNum,
+              typename = typename std::enable_if<std::is_arithmetic<TNum>::value>::type>
+    static blob create_from_numeric(TNum val)
+    {
+        return create_from_bytes(std::to_string(val));
     }
 
     void assign(const std::shared_ptr<char> &buffer, int offset, unsigned int length)

@@ -60,6 +60,19 @@ pegasus_server_write::pegasus_server_write(pegasus_server_impl *server)
     init_non_batch_write_handlers();
 }
 
+int pegasus_server_write::make_idempotent(dsn::message_ex *input_req, dsn::apps::update_request &_req)
+{
+    dsn::task_code rpc_code(req->rpc_code());
+    if (rpc_code == dsn::apps::RPC_RRDB_RRDB_INCR) {
+        dsn::apps::incr_request incr;
+        dsn::unmarshall(req, incr);
+        return _impl->make_incr_idempotent(incr, new_req);
+            ::dsn::marshall(_response, resp);
+            dsn_rpc_reply(_response);
+    }
+    return dsn::ERR_OK;
+}
+
 int pegasus_server_write::on_batched_write_requests(dsn::message_ex **requests,
                                                     int count,
                                                     int64_t decree,

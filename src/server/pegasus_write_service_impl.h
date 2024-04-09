@@ -181,6 +181,70 @@ public:
         return resp.error;
     }
 
+    int make_incr_idempotent(const dsn::apps::incr_request &req, dsn::apps::incr_response &resp, dsn::apps::update_request &update)
+    {
+        absl::string_view raw_key = req.key.to_string_view();
+
+        db_get_context get_ctx;
+        int err = _rocksdb_wrapper->get(raw_key, &get_ctx);
+        if (err != rocksdb::Status::kOk) {
+            return err;
+        }
+
+        if (!get_ctx.found || get_ctx.expired) {
+            // Old value was not found, set to 0 before increment.
+            make_idempotent_request_for_incr(req.key, req.increment, req.expire_ts_seconds > 0 ? req.expire_ts_seconds : 0, update);
+            return rocksdb::Status::kOk;
+        }
+
+        dsn::blob old_value;
+        pegasus_extract_user_data(
+            _pegasus_data_version, std::move(get_ctx.raw_value), old_value);
+
+        int64_t new_value = 0;
+        if (old_value.empty()) {
+            // Old value is empty, set to 0 before increment.
+            new_value = req.increment;
+        } else {
+            int64_t old_int;
+            if (!dsn::buf2int64(old_value.to_string_view(), old_int)) {
+                // invalid old value
+                LOG_ERROR_PREFIX("incr failed: decree = {}, error = "
+                                 "old value \"{}\" is not an integer or out of range",
+                                 decree,
+                                 utils::c_escape_sensitive_string(old_value));
+                resp.error = rocksdb::Status::kInvalidArgument;
+                return resp.error;
+            }
+            new_value = old_int + req.increment;
+            if ((req.increment > 0 && new_value < old_int) ||
+                (req.increment < 0 && new_value > old_int)) {
+                // new value is out of range, return old value by 'new_value'
+                LOG_ERROR_PREFIX("incr failed: decree = {}, error = "
+                                 "new value is out of range, old_value = {}, increment = {}",
+                                 decree,
+                                 old_int,
+                                 req.increment);
+                resp.error = rocksdb::Status::kInvalidArgument;
+                resp.new_value = old_int;
+                return resp.error;
+            }
+        }
+
+        // Set new TTL.
+        uint32_t new_expire_ts = 0;
+        if (req.expire_ts_seconds == 0) {
+            new_expire_ts = get_ctx.expire_ts;
+        } else if (req.expire_ts_seconds < 0) {
+            new_expire_ts = 0;
+        } else { // req.expire_ts_seconds > 0
+            new_expire_ts = req.expire_ts_seconds;
+        }
+
+        make_idempotent_request_for_incr(req.key, new_value, new_expire_ts, update);
+        return rocksdb::Status::kOk;
+    }
+
     int incr(int64_t decree, const dsn::apps::incr_request &update, dsn::apps::incr_response &resp)
     {
         resp.app_id = get_gpid().get_app_id();
@@ -577,6 +641,19 @@ private:
         dsn::blob raw_key;
         pegasus_generate_key(raw_key, hash_key, sort_key);
         return raw_key;
+    }
+
+    static inline void make_idempotent_request(const dsn::blob &key, int64_t val, uint32_t expire_ts, dsn::apps::update_type type, dsn::apps::update_request &update)
+    {
+        update.key = key;
+        update.value = dsn::blob::create_from_numeric(val);
+        update.expire_ts_seconds = expire_ts;
+        update.__set_type(type);
+    }
+
+    static inline void make_idempotent_request_for_incr(const dsn::blob &key, int64_t val, uint32_t expire_ts, dsn::apps::update_request &update)
+    {
+        make_idempotent_request(key, val, expire_ts, dsn::apps::update_type::UT_INCR, update);
     }
 
     // return true if the check type is supported

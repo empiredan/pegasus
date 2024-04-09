@@ -211,6 +211,17 @@ int pegasus_write_service::multi_remove(int64_t decree,
     return err;
 }
 
+int pegasus_write_service::make_idempotent(dsn::message_ex *input_req, dsn::message_ex **output_req)
+{
+    dsn::task_code rpc_code(req->rpc_code());
+    if (rpc_code == dsn::apps::RPC_RRDB_RRDB_INCR) {
+        dsn::apps::incr_request incr;
+        dsn::unmarshall(req, incr);
+        return _impl->make_incr_idempotent(incr, new_req);
+    }
+    return dsn::ERR_OK;
+}
+
 int pegasus_write_service::incr(int64_t decree,
                                 const dsn::apps::incr_request &update,
                                 dsn::apps::incr_response &resp)
