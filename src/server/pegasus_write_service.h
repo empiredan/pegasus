@@ -146,6 +146,9 @@ public:
                      const dsn::apps::multi_remove_request &update,
                      dsn::apps::multi_remove_response &resp);
 
+    // Convert an INCR into an idempotent request.
+    int make_idempotent(const dsn::apps::incr_request &req, dsn::apps::incr_response &err_resp, dsn::apps::update_request &update);
+
     // Write INCR record.
     int incr(int64_t decree, const dsn::apps::incr_request &update, dsn::apps::incr_response &resp);
 

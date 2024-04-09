@@ -181,18 +181,19 @@ public:
         return resp.error;
     }
 
-    int make_incr_idempotent(const dsn::apps::incr_request &req, dsn::apps::incr_response &resp, dsn::apps::update_request &update)
+    int make_idempotent(const dsn::apps::incr_request &req, dsn::apps::incr_response &err_resp, dsn::apps::update_request &update)
     {
         absl::string_view raw_key = req.key.to_string_view();
 
         db_get_context get_ctx;
         int err = _rocksdb_wrapper->get(raw_key, &get_ctx);
         if (err != rocksdb::Status::kOk) {
+            make_error_response(err, err_resp);
             return err;
         }
 
         if (!get_ctx.found || get_ctx.expired) {
-            // Old value was not found, set to 0 before increment.
+            // Once Old value is not found or expired, set to 0 before increment.
             make_idempotent_request_for_incr(req.key, req.increment, req.expire_ts_seconds > 0 ? req.expire_ts_seconds : 0, update);
             return rocksdb::Status::kOk;
         }
@@ -206,28 +207,29 @@ public:
             // Old value is empty, set to 0 before increment.
             new_value = req.increment;
         } else {
-            int64_t old_int;
+            int64_t old_int = 0;
             if (!dsn::buf2int64(old_value.to_string_view(), old_int)) {
-                // invalid old value
-                LOG_ERROR_PREFIX("incr failed: decree = {}, error = "
-                                 "old value \"{}\" is not an integer or out of range",
-                                 decree,
+                // Old value is not valid int64.
+                LOG_ERROR_PREFIX("incr failed: error = old value \"{}\" "
+                                 "is not an integer or out of range",
                                  utils::c_escape_sensitive_string(old_value));
-                resp.error = rocksdb::Status::kInvalidArgument;
-                return resp.error;
+                err = rocksdb::Status::kInvalidArgument;
+                make_error_response(err, err_resp);
+                return err;
             }
+
             new_value = old_int + req.increment;
             if ((req.increment > 0 && new_value < old_int) ||
                 (req.increment < 0 && new_value > old_int)) {
-                // new value is out of range, return old value by 'new_value'
-                LOG_ERROR_PREFIX("incr failed: decree = {}, error = "
-                                 "new value is out of range, old_value = {}, increment = {}",
-                                 decree,
+                // New value overflows, return old value.
+                LOG_ERROR_PREFIX("incr failed: error = new value is out of range, "
+                                 "old_value = {}, increment = {}, new_value = {}",
                                  old_int,
-                                 req.increment);
-                resp.error = rocksdb::Status::kInvalidArgument;
-                resp.new_value = old_int;
-                return resp.error;
+                                 req.increment,
+                                 new_value);
+                err = rocksdb::Status::kInvalidArgument;
+                make_error_response(err, old_int, err_resp);
+                return err;
             }
         }
 
@@ -643,17 +645,39 @@ private:
         return raw_key;
     }
 
-    static inline void make_idempotent_request(const dsn::blob &key, int64_t val, uint32_t expire_ts, dsn::apps::update_type type, dsn::apps::update_request &update)
+    static inline void make_idempotent_request(const dsn::blob &key, int64_t value, uint32_t expire_ts, dsn::apps::update_type type, dsn::apps::update_request &update)
     {
         update.key = key;
-        update.value = dsn::blob::create_from_numeric(val);
+        update.value = dsn::blob::create_from_numeric(value);
         update.expire_ts_seconds = expire_ts;
         update.__set_type(type);
     }
 
-    static inline void make_idempotent_request_for_incr(const dsn::blob &key, int64_t val, uint32_t expire_ts, dsn::apps::update_request &update)
+    static inline void make_idempotent_request_for_incr(const dsn::blob &key, int64_t value, uint32_t expire_ts, dsn::apps::update_request &update)
     {
-        make_idempotent_request(key, val, expire_ts, dsn::apps::update_type::UT_INCR, update);
+        make_idempotent_request(key, value, expire_ts, dsn::apps::update_type::UT_INCR, update);
+    }
+
+    inline void make_error_response(int err, dsn::apps::incr_response &resp)
+    {
+        CHECK_NE(err, rocksdb::Status::kOk);
+        resp.error = err;
+
+        const auto pid = get_gpid();
+        resp.app_id = pid.get_app_id();
+        resp.partition_index = pid.get_partition_index();
+
+        // Since v2.6.0, there would be no incr request in plog. Therefore, there would be no
+        // decree for the failed incr request. Set decree to -1 for the response.
+        resp.decree = -1;
+
+        resp.server = _primary_address;
+    }
+
+    inline void make_error_response(int err, int64_t new_value, dsn::apps::incr_response &resp)
+    {
+        make_error_response(err, resp);
+        resp.new_value = new_value;
     }
 
     // return true if the check type is supported
