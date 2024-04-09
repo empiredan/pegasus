@@ -225,7 +225,7 @@ void replica::on_client_write(dsn::message_ex *request, bool ignore_throttling)
         return;
     }
 
-    dsn::message_ex *new_request;
+    dsn::message_ex *new_request = nullptr;
     if (!spec->rpc_request_is_write_idempotent) {
         const int err = _app->make_idempotent(request, &new_request);
         if (dsn_unlikely(err != rocksdb::Status::kOk)) {
