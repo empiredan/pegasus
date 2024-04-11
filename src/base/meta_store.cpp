@@ -32,6 +32,8 @@ const std::string meta_store::DATA_COLUMN_FAMILY_NAME = "default";
 const std::string meta_store::META_COLUMN_FAMILY_NAME = "pegasus_meta_cf";
 const std::string meta_store::DATA_VERSION = "pegasus_data_version";
 const std::string meta_store::LAST_FLUSHED_DECREE = "pegasus_last_flushed_decree";
+const std::string meta_store::LAST_DUP_SOURCE_DECREE = "pegasus_last_dup_source_decree";
+const std::string meta_store::LAST_DUP_SOURCE_INDEX = "pegasus_last_dup_source_index";
 const std::string meta_store::LAST_MANUAL_COMPACT_FINISH_TIME =
     "pegasus_last_manual_compact_finish_time";
 const std::string meta_store::ROCKSDB_ENV_USAGE_SCENARIO_NORMAL = "normal";

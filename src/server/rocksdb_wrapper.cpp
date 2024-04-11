@@ -61,6 +61,7 @@ rocksdb_wrapper::rocksdb_wrapper(pegasus_server_impl *server)
       _db(server->_db),
       _rd_opts(server->_data_cf_rd_opts),
       _meta_cf(server->_meta_cf),
+      _meta_store(server->_meta_store.get()),
       _pegasus_data_version(server->_pegasus_data_version),
       METRIC_VAR_INIT_replica(read_expired_values),
       _default_ttl(0)

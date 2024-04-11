@@ -82,6 +82,7 @@ private:
     std::unique_ptr<rocksdb::WriteBatch> _write_batch;
     std::unique_ptr<rocksdb::WriteOptions> _wt_opts;
     rocksdb::ColumnFamilyHandle *_meta_cf;
+    meta_store *_meta_store;
 
     const uint32_t _pegasus_data_version;
     METRIC_VAR_DECLARE_counter(read_expired_values);
