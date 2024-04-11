@@ -141,11 +141,6 @@ METRIC_DEFINE_counter(replica,
                       dsn::metric_unit::kRequests,
                       "The number of rejected write requests by bulk load ingestion");
 
-METRIC_DEFINE_counter(replica,
-                      dup_rejected_non_idempotent_write_requests,
-                      dsn::metric_unit::kRequests,
-                      "The number of rejected non-idempotent write requests by duplication");
-
 METRIC_DEFINE_counter(
     replica,
     learn_count,
@@ -297,7 +292,6 @@ replica::replica(replica_stub *stub,
       METRIC_VAR_INIT_replica(splitting_rejected_write_requests),
       METRIC_VAR_INIT_replica(splitting_rejected_read_requests),
       METRIC_VAR_INIT_replica(bulk_load_ingestion_rejected_write_requests),
-      METRIC_VAR_INIT_replica(dup_rejected_non_idempotent_write_requests),
       METRIC_VAR_INIT_replica(learn_count),
       METRIC_VAR_INIT_replica(learn_rounds),
       METRIC_VAR_INIT_replica(learn_copy_files),

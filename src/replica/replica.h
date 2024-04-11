@@ -663,7 +663,6 @@ private:
     METRIC_VAR_DECLARE_counter(splitting_rejected_write_requests);
     METRIC_VAR_DECLARE_counter(splitting_rejected_read_requests);
     METRIC_VAR_DECLARE_counter(bulk_load_ingestion_rejected_write_requests);
-    METRIC_VAR_DECLARE_counter(dup_rejected_non_idempotent_write_requests);
 
     METRIC_VAR_DECLARE_counter(learn_count);
     METRIC_VAR_DECLARE_counter(learn_rounds);

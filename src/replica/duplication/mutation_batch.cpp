@@ -163,19 +163,15 @@ void mutation_batch::add_mutation_if_valid(mutation_ptr &mu, decree start_decree
         // ignore
         return;
     }
-    for (mutation_update &update : mu->data.updates) {
+
+    for (size_t i = 0; i < mu->data.updates.size(); ++i) {
+        mutation_update &update = mu->data.updates[i];
+
         // ignore WRITE_EMPTY
         if (update.code == RPC_REPLICATION_WRITE_EMPTY) {
             continue;
         }
-        // Ignore non-idempotent writes.
-        // Normally a duplicating replica will reply non-idempotent writes with
-        // ERR_OPERATION_DISABLED, but there could still be a mutation written
-        // before the duplication was added.
-        // To ignore means this write will be lost, which is acceptable under this rare case.
-        if (!task_spec::get(update.code)->rpc_request_is_write_idempotent) {
-            continue;
-        }
+
         blob bb;
         if (update.data.buffer() != nullptr) {
             bb = std::move(update.data);
@@ -185,7 +181,7 @@ void mutation_batch::add_mutation_if_valid(mutation_ptr &mu, decree start_decree
 
         _total_bytes += bb.length();
         _loaded_mutations.emplace(
-            std::make_tuple(mu->data.header.timestamp, update.code, std::move(bb)));
+            std::make_tuple(mu->data.header.timestamp, update.code, std::move(bb), mu->data.header.decree, i));
     }
 }
 

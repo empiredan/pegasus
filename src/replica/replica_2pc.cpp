@@ -156,14 +156,6 @@ void replica::on_client_write(dsn::message_ex *request, bool ignore_throttling)
         return;
     }
 
-    if (is_duplication_master() && !spec->rpc_request_is_write_idempotent) {
-        // Ignore non-idempotent write, because duplication provides no guarantee of atomicity to
-        // make this write produce the same result on multiple clusters.
-        METRIC_VAR_INCREMENT(dup_rejected_non_idempotent_write_requests);
-        response_client_write(request, ERR_OPERATION_DISABLED);
-        return;
-    }
-
     CHECK_REQUEST_IF_SPLITTING(write);
 
     if (partition_status::PS_PRIMARY != status()) {

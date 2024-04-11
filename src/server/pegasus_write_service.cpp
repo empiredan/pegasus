@@ -171,7 +171,9 @@ pegasus_write_service::pegasus_write_service(pegasus_server_impl *server)
       METRIC_VAR_INIT_replica(dup_time_lag_ms),
       METRIC_VAR_INIT_replica(dup_lagging_writes),
       _put_batch_size(0),
-      _remove_batch_size(0)
+      _remove_batch_size(0),
+      _last_dup_source_decree(-1),
+      _last_dup_source_index(-1)
 {
 }
 
@@ -343,6 +345,27 @@ void pegasus_write_service::clear_up_batch_states()
 #undef PROCESS_WRITE_BATCH
 }
 
+bool pegasus_write_service::is_mutation_old(const dsn::apps::duplicate_entry &entry)
+{
+    // Since non-idempotent operations(incr, check_and_set, check_and_mutate) must
+    // have been in different mutations with different decrees, only decree field
+    // is used for comparison.
+    if (!entry.__isset.decree) {
+        return false;
+    }
+
+    if (_last_dup_source_decree < 0) {
+        // _last_dup_source_decree would be updated elsewhere.
+        return false;
+    }
+
+    if (entry.decree == _last_dup_source_decree) {
+        return entry.index <= _last_dup_source_index;
+    }
+
+    return entry.decree < _last_dup_source_decree;
+}
+
 int pegasus_write_service::duplicate(int64_t decree,
                                      const dsn::apps::duplicate_request &requests,
                                      dsn::apps::duplicate_response &resp)
@@ -360,6 +383,10 @@ int pegasus_write_service::duplicate(int64_t decree,
             return empty_put(decree);
         }
 
+        if (is_mutation_old(request)) {
+            continue;
+        }
+
         METRIC_VAR_INCREMENT(dup_requests);
         METRIC_VAR_AUTO_LATENCY(
             dup_time_lag_ms, request.timestamp * 1000, [this](uint64_t latency) {
@@ -367,6 +394,7 @@ int pegasus_write_service::duplicate(int64_t decree,
                     METRIC_VAR_INCREMENT(dup_lagging_writes);
                 }
             });
+
         dsn::message_ex *write =
             dsn::from_blob_to_received_msg(request.task_code, request.raw_message);
         bool is_delete = request.task_code == dsn::apps::RPC_RRDB_RRDB_MULTI_REMOVE ||
@@ -418,6 +446,9 @@ int pegasus_write_service::duplicate(int64_t decree,
         resp.__set_error(rocksdb::Status::kInvalidArgument);
         resp.__set_error_hint(fmt::format("unrecognized task code {}", request.task_code));
         return empty_put(ctx.decree);
+
+        _last_dup_source_decree = request.decree;
+        _last_dup_source_index = request.index;
     }
     return resp.error;
 }

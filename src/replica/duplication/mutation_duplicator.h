@@ -32,22 +32,29 @@ namespace dsn {
 namespace replication {
 
 /// \brief Each of the mutation is a tuple made up of
-/// <timestamp, task_code, dsn::blob>.
+/// <timestamp, task_code, dsn::blob, decree, index>.
 /// dsn::blob is the content of the mutation.
-typedef std::tuple<uint64_t, task_code, blob> mutation_tuple;
+typedef std::tuple<uint64_t, task_code, blob, int64_t, int64_t> mutation_tuple;
 
-/// mutations are sorted by timestamp in mutation_tuple_set.
+// Elements in mutation_tuple_set are sorted by the decree of a mutation and the index
+// of an update in this mutation.
 struct mutation_tuple_cmp
 {
     inline bool operator()(const mutation_tuple &lhs, const mutation_tuple &rhs) const
     {
-        // different mutations is probable to be batched together
-        // and sharing the same timestamp, so here we also compare
-        // the data pointer.
-        if (std::get<0>(lhs) == std::get<0>(rhs)) {
-            return std::get<2>(lhs).data() < std::get<2>(rhs).data();
+        // Compare the decrees of two mutations.
+        const int64_t lhs_decree = std::get<3>(lhs);
+        const int64_t rhs_decree = std::get<3>(rhs);
+        if (lhs_decree < rhs_decree) {
+            return true;
         }
-        return std::get<0>(lhs) < std::get<0>(rhs);
+
+        if (lhs_decree > rhs_decree) {
+            return false;
+        }
+
+        // Compare the indexes of 2 updates in the same mutation.
+        return std::get<4>(lhs) < std::get<4>(rhs);
     }
 };
 typedef std::set<mutation_tuple, mutation_tuple_cmp> mutation_tuple_set;

@@ -41,6 +41,14 @@ struct duplicate_entry
 
     // Whether to compare the timetag of old value with the new write's.
     5: optional bool verify_timetag
+
+    // Since v2.6.0.
+    // The decree of a mutation.
+    6: optional i64 decree
+
+    // Since v2.6.0.
+    // The index of an update in a mutation.
+    7: optional i64 index
 }
 
 struct duplicate_response

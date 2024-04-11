@@ -221,7 +221,8 @@ void pegasus_mutation_duplicator::duplicate(mutation_tuple_set muts, callback cb
     uint batch_count = 0;
     uint batch_bytes = 0;
     for (auto mut : muts) {
-        // mut: 0=timestamp, 1=rpc_code, 2=raw_message
+        // mut: 0=timestamp, 1=rpc_code, 2=raw_message, 3=decree, 4=index
+        
         batch_count++;
         dsn::task_code rpc_code = std::get<1>(mut);
         dsn::blob raw_message = std::get<2>(mut);
@@ -232,15 +233,22 @@ void pegasus_mutation_duplicator::duplicate(mutation_tuple_set muts, callback cb
             // Because DUPLICATE comes from other clusters should not be forwarded to any other
             // destinations. A DUPLICATE is meant to be targeting only one cluster.
             continue;
-        } else {
-            dsn::apps::duplicate_entry entry;
-            entry.__set_raw_message(raw_message);
-            entry.__set_task_code(rpc_code);
-            entry.__set_timestamp(std::get<0>(mut));
-            entry.__set_cluster_id(get_current_cluster_id());
-            batch_request->entries.emplace_back(std::move(entry));
-            batch_bytes += raw_message.length();
         }
+
+        dsn::apps::duplicate_entry entry;
+        entry.__set_raw_message(raw_message);
+        entry.__set_task_code(rpc_code);
+        entry.__set_timestamp(std::get<0>(mut));
+        entry.__set_cluster_id(get_current_cluster_id());
+
+        // Since non-idempotent operations(incr, check_and_set, check_and_mutate) must
+        // have been in different mutations with different decrees, only decree field
+        // is needed.
+        entry.__set_decree(std::get<3>(mut));
+        entry.__set_index(std::get<4>(mut));
+
+        batch_request->entries.emplace_back(std::move(entry));
+        batch_bytes += raw_message.length();
 
         if (batch_count == muts.size() || batch_bytes >= FLAGS_duplicate_log_batch_bytes ||
             batch_bytes >= dsn::replication::FLAGS_dup_max_allowed_write_size) {
