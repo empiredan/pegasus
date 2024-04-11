@@ -300,6 +300,15 @@ inline const char *null_str_printer(const char *s) { return s == nullptr ? "(nul
         }                                                                                          \
     } while (0)
 
+#define RETURN_IF_NOT_RDB_CODE_OK(expr) \
+    do {\
+        const int _code = (expr); \
+        if (_code != rocksdb::Status::kOk) { \
+            return _code; \
+        } \
+    } \
+    while (0)
+
 #ifndef NDEBUG
 #define DCHECK CHECK
 #define DCHECK_NOTNULL CHECK_NOTNULL

@@ -366,6 +366,46 @@ bool pegasus_write_service::is_mutation_old(const dsn::apps::duplicate_entry &en
     return entry.decree < _last_dup_source_decree;
 }
 
+int pegasus_write_service::duplicate_multi_put(const db_write_context &ctx, dsn::message_ex *write, dsn::apps::duplicate_response &resp)
+{
+    multi_put_rpc rpc(write);
+    resp.__set_error(_impl->multi_put(ctx, rpc.request(), rpc.response()));
+    return resp.error;
+}
+
+int pegasus_write_service::duplicate_multi_remove(const db_write_context &ctx, dsn::message_ex *write, dsn::apps::duplicate_response &resp)
+{
+    multi_remove_rpc rpc(write);
+    resp.__set_error(_impl->multi_remove(ctx.decree, rpc.request(), rpc.response()));
+    return resp.error;
+}
+
+int pegasus_write_service::duplicate_batch_exec(const db_write_context &ctx, int err, dsn::apps::duplicate_response &resp)
+{
+    if (err == rocksdb::Status::kOk) {
+        err = _impl->batch_commit(ctx.decree);
+    } else {
+        _impl->batch_abort(ctx.decree, err);
+    }
+
+    resp.__set_error(err);
+    return resp.error;
+}
+
+int pegasus_write_service::duplicate_single_put(const db_write_context &ctx, dsn::message_ex *write, dsn::apps::duplicate_response &resp)
+{
+    put_rpc rpc(write);
+    int err = _impl->batch_put(ctx, rpc.request(), rpc.response());
+    return duplicate_batch_exec(ctx, err, resp);
+}
+
+int pegasus_write_service::duplicate_single_remove(const db_write_context &ctx, dsn::message_ex *write, dsn::apps::duplicate_response &resp)
+{
+    remove_rpc rpc(write);
+    int err = _impl->batch_remove(ctx.decree, rpc.request(), rpc.response());
+    return duplicate_batch_exec(ctx, err, resp);
+}
+
 int pegasus_write_service::duplicate(int64_t decree,
                                      const dsn::apps::duplicate_request &requests,
                                      dsn::apps::duplicate_response &resp)
@@ -377,6 +417,7 @@ int pegasus_write_service::duplicate(int64_t decree,
             resp.__set_error_hint("request cluster id is unconfigured");
             return empty_put(decree);
         }
+
         if (request.cluster_id == get_current_cluster_id()) {
             resp.__set_error(rocksdb::Status::kInvalidArgument);
             resp.__set_error_hint("self-duplicating");
@@ -404,45 +445,25 @@ int pegasus_write_service::duplicate(int64_t decree,
             db_write_context::create_duplicate(decree, remote_timetag, request.verify_timetag);
 
         if (request.task_code == dsn::apps::RPC_RRDB_RRDB_MULTI_PUT) {
-            multi_put_rpc rpc(write);
-            resp.__set_error(_impl->multi_put(ctx, rpc.request(), rpc.response()));
-            if (resp.error != rocksdb::Status::kOk) {
-                return resp.error;
-            }
+            RETURN_IF_NOT_RDB_CODE_OK(duplicate_multi_put(ctx, write, resp));
             continue;
         }
+
         if (request.task_code == dsn::apps::RPC_RRDB_RRDB_MULTI_REMOVE) {
-            multi_remove_rpc rpc(write);
-            resp.__set_error(_impl->multi_remove(ctx.decree, rpc.request(), rpc.response()));
-            if (resp.error != rocksdb::Status::kOk) {
-                return resp.error;
-            }
+            RETURN_IF_NOT_RDB_CODE_OK(duplicate_multi_remove(ctx, write, resp));
             continue;
         }
-        put_rpc put;
-        remove_rpc remove;
-        if (request.task_code == dsn::apps::RPC_RRDB_RRDB_PUT ||
-            request.task_code == dsn::apps::RPC_RRDB_RRDB_REMOVE) {
-            int err = rocksdb::Status::kOk;
-            if (request.task_code == dsn::apps::RPC_RRDB_RRDB_PUT) {
-                put = put_rpc(write);
-                err = _impl->batch_put(ctx, put.request(), put.response());
-            }
-            if (request.task_code == dsn::apps::RPC_RRDB_RRDB_REMOVE) {
-                remove = remove_rpc(write);
-                err = _impl->batch_remove(ctx.decree, remove.request(), remove.response());
-            }
-            if (!err) {
-                err = _impl->batch_commit(ctx.decree);
-            } else {
-                _impl->batch_abort(ctx.decree, err);
-            }
-            resp.__set_error(err);
-            if (resp.error != rocksdb::Status::kOk) {
-                return resp.error;
-            }
+
+        if (request.task_code == dsn::apps::RPC_RRDB_RRDB_PUT) {
+            RETURN_IF_NOT_RDB_CODE_OK(duplicate_single_put(ctx, write, resp));
             continue;
         }
+
+        if (request.task_code == dsn::apps::RPC_RRDB_RRDB_REMOVE) {
+            RETURN_IF_NOT_RDB_CODE_OK(duplicate_single_remove(ctx, write, resp));
+            continue;
+        }
+
         resp.__set_error(rocksdb::Status::kInvalidArgument);
         resp.__set_error_hint(fmt::format("unrecognized task code {}", request.task_code));
         return empty_put(ctx.decree);
