@@ -92,9 +92,32 @@ public:
     explicit impl(pegasus_server_impl *server)
         : replica_base(server),
           _primary_address(server->_primary_address),
-          _pegasus_data_version(server->_pegasus_data_version)
+          _pegasus_data_version(server->_pegasus_data_version),
+          _last_dup_source_decree(-1),
+          _last_dup_source_index(-1)
     {
         _rocksdb_wrapper = std::make_unique<rocksdb_wrapper>(server);
+    }
+
+    bool is_mutation_old(const dsn::apps::duplicate_entry &entry)
+    {
+        // Since non-idempotent operations(incr, check_and_set, check_and_mutate) must
+        // have been in different mutations with different decrees, only decree field
+        // is used for comparison.
+        if (!entry.__isset.decree) {
+            return false;
+        }
+
+        if (_last_dup_source_decree < 0) {
+            // _last_dup_source_decree would be updated elsewhere.
+            return false;
+        }
+
+        if (entry.decree == _last_dup_source_decree) {
+            return entry.index <= _last_dup_source_index;
+        }
+
+        return entry.decree < _last_dup_source_decree;
     }
 
     int empty_put(int64_t decree)
@@ -703,6 +726,10 @@ private:
 
     // for setting update_response.error after committed.
     std::vector<dsn::apps::update_response *> _update_responses;
+
+    // For duplication.
+    int64_t _last_dup_source_decree;
+    int64_t _last_dup_source_index;
 };
 
 } // namespace server

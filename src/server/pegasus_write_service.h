@@ -239,9 +239,6 @@ private:
     uint32_t _put_batch_size;
     uint32_t _remove_batch_size;
 
-    int64_t _last_dup_source_decree;
-    int64_t _last_dup_source_index;
-
     // TODO(wutao1): add metrics for failed rpc.
 };
 

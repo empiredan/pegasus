@@ -171,9 +171,7 @@ pegasus_write_service::pegasus_write_service(pegasus_server_impl *server)
       METRIC_VAR_INIT_replica(dup_time_lag_ms),
       METRIC_VAR_INIT_replica(dup_lagging_writes),
       _put_batch_size(0),
-      _remove_batch_size(0),
-      _last_dup_source_decree(-1),
-      _last_dup_source_index(-1)
+      _remove_batch_size(0)
 {
 }
 
@@ -343,27 +341,6 @@ void pegasus_write_service::clear_up_batch_states()
     _batch_start_time = 0;
 
 #undef PROCESS_WRITE_BATCH
-}
-
-bool pegasus_write_service::is_mutation_old(const dsn::apps::duplicate_entry &entry)
-{
-    // Since non-idempotent operations(incr, check_and_set, check_and_mutate) must
-    // have been in different mutations with different decrees, only decree field
-    // is used for comparison.
-    if (!entry.__isset.decree) {
-        return false;
-    }
-
-    if (_last_dup_source_decree < 0) {
-        // _last_dup_source_decree would be updated elsewhere.
-        return false;
-    }
-
-    if (entry.decree == _last_dup_source_decree) {
-        return entry.index <= _last_dup_source_index;
-    }
-
-    return entry.decree < _last_dup_source_decree;
 }
 
 int pegasus_write_service::duplicate_multi_put(const db_write_context &ctx, dsn::message_ex *write, dsn::apps::duplicate_response &resp)
