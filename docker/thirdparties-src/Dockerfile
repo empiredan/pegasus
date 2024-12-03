@@ -26,9 +26,10 @@ ARG GITHUB_REPOSITORY_URL=https://github.com/apache/incubator-pegasus.git
 RUN git clone --depth=1 --branch=${GITHUB_BRANCH} ${GITHUB_REPOSITORY_URL}
 
 ARG ROCKSDB_PORTABLE=native
+ARG WITH_ROCKSDB_TOOLS=OFF
 RUN cd incubator-pegasus/thirdparty \
     && mkdir -p build \
-    && cmake -DCMAKE_BUILD_TYPE=Release -DROCKSDB_PORTABLE=${ROCKSDB_PORTABLE} -B build/ . \
+    && cmake -DCMAKE_BUILD_TYPE=Release -DROCKSDB_PORTABLE=${ROCKSDB_PORTABLE} -DWITH_ROCKSDB_TOOLS=${WITH_ROCKSDB_TOOLS} -B build/ . \
     && cmake --build build/ -j $(($(nproc)/2+1))
 
 RUN cd incubator-pegasus/thirdparty \

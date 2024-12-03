@@ -442,10 +442,11 @@ ExternalProject_Add(lz4
 )
 
 option(ROCKSDB_PORTABLE "Minimum CPU arch to support, or 0 = current CPU, 1 = baseline CPU" 0)
+option(WITH_ROCKSDB_TOOLS "Build RocksDB tools" OFF)
 set(ROCKSDB_OPTIONS
         -DFAIL_ON_WARNINGS=OFF
         -DWITH_BENCHMARK_TOOLS=OFF
-        -DWITH_TOOLS=OFF
+	-DWITH_TOOLS=${WITH_ROCKSDB_TOOLS}
         -DWITH_LZ4=ON
         -Dlz4_ROOT_DIR=${TP_OUTPUT}
         -DWITH_ZSTD=ON

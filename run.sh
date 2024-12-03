@@ -113,6 +113,7 @@ function usage_build()
                                    type: address|leak|thread|undefined"
     echo "   --skip_thirdparty     whether to skip building thirdparties, default no"
     echo "   --enable_rocksdb_portable      build a portable rocksdb binary"
+    echo "   --with_rocksdb_tools           build rocksdb tools"
     echo "   --test                whether to build test binaries"
     echo "   --iwyu                specify the binary path of 'include-what-you-use' when build with IWYU"
     echo "   --cmake_only          whether to run cmake only, default no"
@@ -143,6 +144,7 @@ function run_build()
     SKIP_THIRDPARTY=NO
     SANITIZER=""
     ROCKSDB_PORTABLE=0
+    WITH_ROCKSDB_TOOLS=OFF
     USE_JEMALLOC=OFF
     SEPARATE_SERVERS=OFF
     BUILD_TEST=OFF
@@ -209,6 +211,9 @@ function run_build()
                 ;;
             --enable_rocksdb_portable)
                 ROCKSDB_PORTABLE=1
+                ;;
+            --with_rocksdb_tools)
+                WITH_ROCKSDB_TOOLS=ON
                 ;;
             --use_jemalloc)
                 ENABLE_GPERF=OFF
@@ -288,7 +293,7 @@ function run_build()
         echo "Start building third-parties..."
         mkdir -p build
         pushd build
-        CMAKE_OPTIONS="${CMAKE_OPTIONS} -DROCKSDB_PORTABLE=${ROCKSDB_PORTABLE}"
+        CMAKE_OPTIONS="${CMAKE_OPTIONS} -DROCKSDB_PORTABLE=${ROCKSDB_PORTABLE} -DWITH_ROCKSDB_TOOLS=${WITH_ROCKSDB_TOOLS}" 
         cmake .. ${CMAKE_OPTIONS}
         make -j$JOB_NUM
         exit_if_fail $?
