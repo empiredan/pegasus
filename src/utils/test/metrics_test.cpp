@@ -247,7 +247,7 @@ TEST(metrics_test, create_entity)
         auto attrs = entity->attributes();
         ASSERT_EQ(attrs, test.entity_attrs);
 
-        ASSERT_TRUE(!gutil::ContainsKey(entities, test.entity_id));
+        ASSERT_FALSE(gutil::ContainsKey(entities, test.entity_id));
         entities[test.entity_id] = entity;
     }
 
@@ -316,8 +316,10 @@ TEST(metrics_test, create_metric)
 
         ASSERT_EQ(test.value, my_metric->value());
 
-        auto &iter = gutil::LookupOrInsert(&expected_entities, test.entity.get(), {});
-        iter.emplace(test.prototype, my_metric);
+        const auto *metrics = gutil::InsertOrReturnExisting(&expected_entities, test.entity.get(), {{test.prototype, my_metric}});
+        if (metrics != nullptr) {
+            gutil::InsertOrUpdate(metrics, test.prototype, my_metric);
+        }
     }
 
     entity_map actual_entities;
@@ -2867,11 +2869,11 @@ TEST(metrics_test, http_get_metrics)
     for (const auto &test : tests) {
         entity_container expected_entities;
         for (const auto &entity_pair : test.expected_entity_metrics) {
-            const auto *entity = gutil::FindOrNull(entities, entity_pair.first);
+            const auto entity = gutil::FindPtrOrNull(entities, entity_pair.first);
             ASSERT_NE(entity, nullptr);
-            expected_entities.emplace((*entity)->id(),
-                                      entity_properties{(*entity)->prototype()->name(),
-                                                        (*entity)->attributes(),
+            expected_entities.emplace(entity->id(),
+                                      entity_properties{entity->prototype()->name(),
+                                                        entity->attributes(),
                                                         entity_pair.second});
         }
 
@@ -3125,11 +3127,11 @@ void scoped_entity::test_survival_immediately_after_initialization() const
     // Use internal member directly instead of calling entities(). We don't want to have
     // any reference which may affect the test results.
     const auto &entities = metric_registry::instance()._entities;
-    const auto *entity = gutil::FindOrNull(entities, _my_entity_id);
+    const auto entity = gutil::FindPtrOrNull(entities, _my_entity_id);
     ASSERT_NE(entity, nullptr);
-    ASSERT_EQ(_expected_my_entity_raw_ptr, entity->get());
+    ASSERT_EQ(_expected_my_entity_raw_ptr, entity.get());
 
-    const auto &actual_surviving_metrics = get_actual_surviving_metrics(*entity);
+    const auto &actual_surviving_metrics = get_actual_surviving_metrics(entity);
     ASSERT_EQ(_expected_all_metrics, actual_surviving_metrics);
 }
 
@@ -3143,18 +3145,18 @@ void scoped_entity::test_survival_after_retirement() const
     // Use internal member directly instead of calling entities(). We don't want to have
     // any reference which may affect the test results.
     const auto &entities = metric_registry::instance()._entities;
-    const auto *iter = gutil::FindOrNull(entities, _my_entity_id);
+    const auto entity = gutil::FindPtrOrNull(entities, _my_entity_id);
     if (_my_entity == nullptr) {
         // The entity has been retired.
-        ASSERT_EQ(iter, nullptr);
+        ASSERT_EQ(entity, nullptr);
         ASSERT_TRUE(_expected_surviving_metrics.empty());
         return;
     }
 
-    ASSERT_NE(iter, nullptr);
-    ASSERT_EQ(_expected_my_entity_raw_ptr, iter->get());
+    ASSERT_NE(entity, nullptr);
+    ASSERT_EQ(_expected_my_entity_raw_ptr, entity.get());
 
-    const auto &actual_surviving_metrics = get_actual_surviving_metrics(*iter);
+    const auto &actual_surviving_metrics = get_actual_surviving_metrics(entity);
     ASSERT_EQ(_expected_surviving_metrics, actual_surviving_metrics);
 }
 

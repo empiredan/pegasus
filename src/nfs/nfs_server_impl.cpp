@@ -108,7 +108,6 @@ void nfs_service_impl::on_copy(const ::dsn::service::copy_request &request,
                 reply(resp);
                 return;
             }
-            fh = std::make_shared<file_handle_info_on_server>();
             fh->file_handle = dfile;
         } else {
             dfile = fh->file_handle;
