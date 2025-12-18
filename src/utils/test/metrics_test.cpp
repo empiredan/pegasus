@@ -316,7 +316,8 @@ TEST(metrics_test, create_metric)
 
         ASSERT_EQ(test.value, my_metric->value());
 
-        const auto *metrics = gutil::InsertOrReturnExisting(&expected_entities, test.entity.get(), {{test.prototype, my_metric}});
+        auto *metrics = gutil::InsertOrReturnExisting(
+            &expected_entities, test.entity.get(), {{test.prototype, my_metric}});
         if (metrics != nullptr) {
             gutil::InsertOrUpdate(metrics, test.prototype, my_metric);
         }
