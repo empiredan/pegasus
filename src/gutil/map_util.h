@@ -332,17 +332,37 @@ template <typename M>
 bool InsertOrUpdate(M *m, const MapUtilInitT<M> &vt)
 {
     auto ret = m->insert(vt);
-    if (ret.second)
+    if (ret.second) {
         return true;
+    }
+
     subtle::GetMapped(*ret.first) = subtle::GetMapped(vt); // update
     return false;
 }
 
 // Same as above, except that the key and value are passed separately.
-template <typename M>
+template <typename M, std::enable_if_t<internal_map_util::HasTryEmplace<M>::value, int> = 0>
 bool InsertOrUpdate(M *m, const MapUtilKeyT<M> &key, const MapUtilMappedT<M> &value)
 {
-    return InsertOrUpdate(m, {key, value});
+    auto ret = m->try_emplace(key, value);
+    if (ret.second) {
+        return true;
+    }
+
+    subtle::GetMapped(*ret.first) = value; // update
+    return false;
+}
+
+template <typename M, std::enable_if_t<!internal_map_util::HasTryEmplace<M>::value, int> = 0>
+bool InsertOrUpdate(M *m, const MapUtilKeyT<M> &key, const MapUtilMappedT<M> &value)
+{
+    auto ret = m->emplace(key, value);
+    if (ret.second) {
+        return true;
+    }
+
+    subtle::GetMapped(*ret.first) = value; // update
+    return false;
 }
 
 // Inserts/updates all the key-value pairs from the range defined by the
@@ -359,12 +379,27 @@ void InsertOrUpdateMany(M *m, InputIterator first, InputIterator last)
 // of the form std::map<Key, Value*> which owns the objects pointed to by the
 // value pointers.  If there was an existing value for the key, it is deleted.
 // True indicates an insert took place, false indicates an update + delete.
-template <typename M>
+template <typename M, std::enable_if_t<internal_map_util::HasTryEmplace<M>::value, int> = 0>
 bool InsertAndDeleteExisting(M *m, const MapUtilKeyT<M> &key, const MapUtilMappedT<M> &value)
 {
-    auto ret = m->insert(MapUtilValueT<M>(key, value));
-    if (ret.second)
+    auto ret = m->try_emplace(key, value);
+    if (ret.second) {
         return true;
+    }
+
+    delete ret.first->second;
+    ret.first->second = value;
+    return false;
+}
+
+template <typename M, std::enable_if_t<!internal_map_util::HasTryEmplace<M>::value, int> = 0>
+bool InsertAndDeleteExisting(M *m, const MapUtilKeyT<M> &key, const MapUtilMappedT<M> &value)
+{
+    auto ret = m->emplace(key, value);
+    if (ret.second) {
+        return true;
+    }
+
     delete ret.first->second;
     ret.first->second = value;
     return false;
@@ -381,10 +416,16 @@ bool InsertIfNotPresent(M *m, const MapUtilInitT<M> &vt)
 }
 
 // Same as above except the key and value are passed separately.
-template <typename M>
+template <typename M, std::enable_if_t<internal_map_util::HasTryEmplace<M>::value, int> = 0>
 bool InsertIfNotPresent(M *m, const MapUtilKeyT<M> &key, const MapUtilMappedT<M> &value)
 {
-    return InsertIfNotPresent(m, {key, value});
+    return m->try_emplace(key, value).second;
+}
+
+template <typename M, std::enable_if_t<!internal_map_util::HasTryEmplace<M>::value, int> = 0>
+bool InsertIfNotPresent(M *m, const MapUtilKeyT<M> &key, const MapUtilMappedT<M> &value)
+{
+    return m->emplace(key, value).second;
 }
 
 // Same as above except dies if the key already exists in the m.
@@ -424,7 +465,7 @@ void InsertOrDieNoPrint(M *m, const MapUtilKeyT<M> &key, const MapUtilMappedT<M>
 // proto.set_field("foo");
 template <typename M>
 auto InsertKeyOrDie(M *m, const MapUtilKeyT<M> &key) ->
-    typename std::enable_if<internal_map_util::HasTryEmplace<M>::value, MapUtilMappedT<M> &>::type
+    std::enable_if_t<internal_map_util::HasTryEmplace<M>::value, MapUtilMappedT<M> &>
 {
     auto res = m->try_emplace(key);
     CHECK(res.second, "duplicate key: {}", key);
@@ -434,9 +475,9 @@ auto InsertKeyOrDie(M *m, const MapUtilKeyT<M> &key) ->
 // Anything without try_emplace, we support with the legacy code path.
 template <typename M>
 auto InsertKeyOrDie(M *m, const MapUtilKeyT<M> &key) ->
-    typename std::enable_if<!internal_map_util::HasTryEmplace<M>::value, MapUtilMappedT<M> &>::type
+    std::enable_if_t<!internal_map_util::HasTryEmplace<M>::value, MapUtilMappedT<M> &>
 {
-    auto res = m->insert(MapUtilValueT<M>(key, MapUtilMappedT<M>()));
+    auto res = m->emplace(key, MapUtilMappedT<M>());
     CHECK(res.second, "duplicate key: {}", key);
     return res.first->second;
 }
@@ -456,9 +497,15 @@ MapUtilMappedT<M> &LookupOrInsert(M *m, const MapUtilInitT<M> &vt)
 
 // Same as above except the key-value are passed separately.
 template <typename M>
-MapUtilMappedT<M> &LookupOrInsert(M *m, const MapUtilKeyT<M> &key, const MapUtilMappedT<M> &value)
+auto LookupOrInsert(M *m, const MapUtilKeyT<M> &key, const MapUtilMappedT<M> &value) -> std::enable_if_t<internal_map_util::HasTryEmplace<M>::value, MapUtilMappedT<M> &>
 {
-    return LookupOrInsert(m, {key, value});
+    return subtle::GetMapped(*m->try_emplace(key, value).first);
+}
+
+template <typename M>
+auto LookupOrInsert(M *m, const MapUtilKeyT<M> &key, const MapUtilMappedT<M> &value) -> std::enable_if_t<!internal_map_util::HasTryEmplace<M>::value, MapUtilMappedT<M> &>
+{
+    return subtle::GetMapped(*m->emplace(key, value).first);
 }
 
 // Returns a reference to the pointer associated with key. If not found, a
@@ -468,12 +515,27 @@ MapUtilMappedT<M> &LookupOrInsert(M *m, const MapUtilKeyT<M> &key, const MapUtil
 //
 // Useful for containers of the form Map<Key, Ptr>, where Ptr is pointer-like.
 template <typename M, class... Args>
-MapUtilMappedT<M> &LookupOrInsertNew(M *m, const MapUtilKeyT<M> &key, Args &&...args)
+auto LookupOrInsertNew(M *m, const MapUtilKeyT<M> &key, Args &&...args) ->
+    std::enable_if_t<internal_map_util::HasTryEmplace<M>::value, MapUtilMappedT<M> &>
 {
     using Mapped = MapUtilMappedT<M>;
     using MappedDeref = decltype(*std::declval<Mapped>());
     using Element = typename std::decay<MappedDeref>::type;
-    auto ret = m->insert(MapUtilValueT<M>(key, Mapped()));
+    auto ret = m->try_emplace(key);
+    if (ret.second) {
+        ret.first->second = Mapped(new Element(std::forward<Args>(args)...));
+    }
+    return ret.first->second;
+}
+
+template <typename M, class... Args>
+auto LookupOrInsertNew(M *m, const MapUtilKeyT<M> &key, Args &&...args) ->
+    std::enable_if_t<!internal_map_util::HasTryEmplace<M>::value, MapUtilMappedT<M> &>
+{
+    using Mapped = MapUtilMappedT<M>;
+    using MappedDeref = decltype(*std::declval<Mapped>());
+    using Element = typename std::decay<MappedDeref>::type;
+    auto ret = m->emplace(key, Mapped());
     if (ret.second) {
         ret.first->second = Mapped(new Element(std::forward<Args>(args)...));
     }
@@ -498,22 +560,55 @@ template <typename M>
 bool UpdateReturnCopy(M *m, const MapUtilValueT<M> &vt, MapUtilMappedT<M> *previous)
 {
     auto ret = m->insert(vt);
-    if (ret.second)
+    if (ret.second) {
         return false;
-    if (previous)
+    }
+
+    if (previous != nullptr) {
         *previous = ret.first->second;
+    }
+
     ret.first->second = vt.second; // update
     return true;
 }
 
 // Same as above except that the key and mapped value are passed separately.
-template <typename M>
+template <typename M, std::enable_if_t<internal_map_util::HasTryEmplace<M>::value, int> = 0>
 bool UpdateReturnCopy(M *m,
                       const MapUtilKeyT<M> &key,
                       const MapUtilMappedT<M> &value,
                       MapUtilMappedT<M> *previous)
 {
-    return UpdateReturnCopy(m, MapUtilValueT<M>(key, value), previous);
+    auto ret = m->try_emplace(key, value);
+    if (ret.second) {
+        return false;
+    }
+
+    if (previous != nullptr) {
+        *previous = ret.first->second;
+    }
+
+    ret.first->second = value; // update
+    return true;
+}
+
+template <typename M, std::enable_if_t<!internal_map_util::HasTryEmplace<M>::value, int> = 0>
+bool UpdateReturnCopy(M *m,
+                      const MapUtilKeyT<M> &key,
+                      const MapUtilMappedT<M> &value,
+                      MapUtilMappedT<M> *previous)
+{
+    auto ret = m->emplace(key, value);
+    if (ret.second) {
+        return false;
+    }
+
+    if (previous != nullptr) {
+        *previous = ret.first->second;
+    }
+
+    ret.first->second = value; // update
+    return true;
 }
 
 // Tries to insert the given key-value pair into the m. Returns null
@@ -527,17 +622,38 @@ template <typename M>
 MapUtilMappedT<M> *InsertOrReturnExisting(M *m, const MapUtilValueT<M> &vt)
 {
     auto ret = m->insert(vt);
-    if (ret.second)
+    if (ret.second) {
         return nullptr;        // Inserted, no previous value.
+    }
+
     return &ret.first->second; // Return address of previous value.
 }
 
-// Same as above, except for explicit key and data.
+// Same as above, except for explicit key and value.
 template <typename M>
-MapUtilMappedT<M> *
-InsertOrReturnExisting(M *m, const MapUtilKeyT<M> &key, const MapUtilMappedT<M> &data)
+auto
+InsertOrReturnExisting(M *m, const MapUtilKeyT<M> &key, const MapUtilMappedT<M> &value) ->
+    std::enable_if_t<internal_map_util::HasTryEmplace<M>::value, MapUtilMappedT<M> *>
 {
-    return InsertOrReturnExisting(m, MapUtilValueT<M>(key, data));
+    auto ret = m->emplace(key, value);
+    if (ret.second) {
+        return nullptr;        // Inserted, no previous value.
+    }
+
+    return &ret.first->second; // Return address of previous value.
+}
+
+template <typename M>
+auto
+InsertOrReturnExisting(M *m, const MapUtilKeyT<M> &key, const MapUtilMappedT<M> &value) ->
+    std::enable_if_t<!internal_map_util::HasTryEmplace<M>::value, MapUtilMappedT<M> *>
+{
+    auto ret = m->try_emplace(key, value);
+    if (ret.second) {
+        return nullptr;        // Inserted, no previous value.
+    }
+
+    return &ret.first->second; // Return address of previous value.
 }
 
 // Saves the reverse mapping into reverse. Returns true if values could all be
